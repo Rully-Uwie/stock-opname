@@ -3,75 +3,141 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aplikasi Stock Opname</title>
-    <!-- Memuat library kamera scanner dari internet -->
+    <title>Stock Opname</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; background: #f4f4f9; margin: 0; }
-        h2 { color: #333; font-size: 22px; }
-        #reader { width: 100%; max-width: 400px; margin: auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        #result { margin-top: 20px; font-size: 16px; font-weight: bold; color: #333; padding: 10px; }
-        .success { color: #2e7d32; background: #e8f5e9; border-radius: 5px; padding: 10px; display: inline-block; }
-        .error { color: #c62828; background: #ffebee; border-radius: 5px; padding: 10px; display: inline-block; }
+        body { font-family: Arial, sans-serif; text-align: center; padding: 15px; background: #f4f4f9; margin: 0; }
+        .card { background: white; padding: 15px; border-radius: 8px; max-width: 400px; margin: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        input, button { width: 100%; padding: 10px; margin: 6px 0; box-sizing: border-box; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #2e7d32; color: white; border: none; font-weight: bold; cursor: pointer; }
+        button:active { background: #1b5e20; }
+        #reader { width: 100%; border-radius: 6px; overflow: hidden; margin-top: 10px; }
+        .hidden { display: none; }
+        #result-info { font-weight: bold; color: #d32f2f; margin: 10px 0; }
+        .success { color: #2e7d32; background: #e8f5e9; padding: 8px; border-radius: 4px; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <h2>Stock Opname Barcode</h2>
-    <p>Arahkan kamera ke barcode produk</p>
-
-    <!-- Kotak tempat kamera akan muncul -->
-    <div id="reader"></div>
+<div class="card">
+    <h2>Stock Opname</h2>
     
-    <div id="result">Menunggu scan...</div>
+    <!-- Form Data Petugas (Hanya diisi sekali di awal) -->
+    <div id="setup-section">
+        <input type="text" id="petugas" placeholder="Nama Petugas" required>
+        <input type="text" id="area" placeholder="Area / Rak Penyimpanan" required>
+        <button onclick="mulaiOpname()">Mulai Scan</button>
+    </div>
 
-    <script>
-        // ==========================================
-        // TEMPEL URL WEB APP ANDA DI ANTARA TANDA KUTIP DI BAWAH INI
-        // ==========================================
-        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwQ_rupos6K42AJqkm9PJl6ANVPpyqeimN0gdCkHxVTCuGDW8m4Qril9CIVZsvG1PhFOg/exec";
-
-        function onScanSuccess(decodedText, decodedResult) {
-            // Hentikan sementara scanner agar tidak scan dobel secara beruntun
-            html5QrCode.stop().then(() => {
-                document.getElementById('result').innerText = "Mengirim: " + decodedText;
-                
-                // Kirim data ke Google Apps Script
-                fetch(WEB_APP_URL, {
-                    method: "POST",
-                    mode: "no-cors",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ barcode: decodedText })
-                })
-                .then(() => {
-                    document.getElementById('result').innerHTML = `<div class="success">Berhasil disimpan: ${decodedText}</div>`;
-                    // Nyalakan kembali scanner setelah 2 detik untuk scan berikutnya
-                    setTimeout(startScanner, 2000);
-                })
-                .catch(error => {
-                    document.getElementById('result').innerHTML = `<div class="error">Gagal mengirim data</div>`;
-                    setTimeout(startScanner, 2000);
-                });
-            }).catch(err => {
-                console.error("Gagal menghentikan scanner.", err);
-            });
-        }
-
-        const html5QrCode = new Html5Qrcode("reader");
+    <!-- Area Scanner & Form Input Qty (Muncul setelah klik Mulai) -->
+    <div id="scanner-section" class="hidden">
+        <p style="font-size: 14px; color: #666; margin: 0;">Petugas: <b id="lbl-petugas"></b> | Area: <b id="lbl-area"></b></p>
         
-        function startScanner() {
-            document.getElementById('result').innerText = "Menunggu scan...";
-            html5QrCode.start(
-                { facingMode: "environment" }, // Menggunakan kamera belakang HP
-                { fps: 10, qrbox: { width: 250, height: 150 } },
-                onScanSuccess
-            ).catch(err => {
-                document.getElementById('result').innerHTML = `<div class="error">Gagal membuka kamera. Pastikan izin kamera aktif.</div>`;
-            });
+        <div id="reader"></div>
+        
+        <div id="result-info">Menunggu scan...</div>
+
+        <div id="form-submit" class="hidden">
+            <label style="font-size: 14px; float: left; font-weight: bold;">Barcode Terdeteksi:</label>
+            <input type="text" id="barcode-val" readonly style="background: #e0e0e0;">
+            
+            <label style="font-size: 14px; float: left; font-weight: bold;">Jumlah (Qty):</label>
+            <input type="number" id="qty-val" value="1" min="1">
+            
+            <button onclick="kirimData()">Submit Data</button>
+        </div>
+    </div>
+    
+    <div id="status-pesan"></div>
+</div>
+
+<script>
+    const WEB_APP_URL = "MASUKKAN_URL_WEB_APP_ANDA_DISINI"; // Ganti dengan URL Web App terbaru Anda
+    
+    let html5QrCode;
+    let globalPetugas = "";
+    let globalArea = "";
+
+    function mulaiOpname() {
+        globalPetugas = document.getElementById('petugas').value.trim();
+        globalArea = document.getElementById('area').value.trim();
+
+        if(!globalPetugas || !globalArea) {
+            alert("Mohon isi Nama Petugas dan Area terlebih dahulu!");
+            return;
         }
 
-        // Jalankan scanner saat halaman pertama kali dibuka
-        startScanner();
-    </script>
+        // Sembunyikan form awal, tampilkan area scanner
+        document.getElementById('setup-section').classList.add('hidden');
+        document.getElementById('scanner-section').classList.remove('hidden');
+        
+        document.getElementById('lbl-petugas').innerText = globalPetugas;
+        document.getElementById('lbl-area').innerText = globalArea;
+
+        inisialisasiKamera();
+    }
+
+    function inisialisasiKamera() {
+        html5QrCode = new Html5Qrcode("reader");
+        html5QrCode.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 250, height: 150 } },
+            onScanSuccess
+        ).catch(err => {
+            document.getElementById('result-info').innerText = "Gagal membuka kamera. Pastikan izin aktif.";
+        });
+    }
+
+    function onScanSuccess(decodedText, decodedResult) {
+        // Hentikan kamera saat barcode berhasil ditangkap
+        html5QrCode.stop().then(() => {
+            document.getElementById('reader').style.display = 'none'; // Sembunyikan kotak kamera sementara
+            document.getElementById('result-info').innerText = "Barcode Berhasil Dipindai!";
+            
+            // Tampilkan form input qty dan tombol submit
+            document.getElementById('barcode-val').value = decodedText;
+            document.getElementById('qty-val').value = "1"; // Default Qty 1
+            document.getElementById('form-submit').classList.remove('hidden');
+        }).catch(err => {
+            console.error("Gagal menghentikan kamera", err);
+        });
+    }
+
+    function kirimData() {
+        let barcode = document.getElementById('barcode-val').value;
+        let qty = document.getElementById('qty-val').value;
+
+        document.getElementById('status-pesan').innerHTML = "Mengirim data...";
+        document.getElementById('form-submit').classList.add('hidden');
+
+        fetch(WEB_APP_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                petugas: globalPetugas,
+                area: globalArea,
+                barcode: barcode,
+                qty: qty
+            })
+        })
+        .then(() => {
+            document.getElementById('status-pesan').innerHTML = `<div class="success">Data tersimpan: ${barcode} (Qty: ${qty})</div>`;
+            
+            // Reset tampilan kembali ke posisi siap scan (Nama & Area TETAP tersimpan)
+            setTimeout(() => {
+                document.getElementById('status-pesan').innerHTML = "";
+                document.getElementById('reader').style.display = 'block';
+                document.getElementById('result-info').innerText = "Menunggu scan...";
+                inisialisasiKamera(); // Nyalakan kamera kembali
+            }, 1500);
+        })
+        .catch(error => {
+            alert("Gagal mengirim data!");
+            document.getElementById('form-submit').classList.remove('hidden');
+        });
+    }
+</script>
+
 </body>
 </html>
